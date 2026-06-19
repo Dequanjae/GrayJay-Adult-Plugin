@@ -1,16 +1,16 @@
 {
   "name": "Pornhub",
   "description": "Browse trending, search, and watch videos from Pornhub with optional login for personalized content.",
-  "author": "Custom",
-  "authorUrl": "https://github.com",
+  "author": "Dequanjae",
+  "authorUrl": "https://github.com/Dequanjae",
 
-  "sourceUrl": "https://YOUR_GITHUB_USERNAME.github.io/grayjay-pornhub/PornhubConfig.json",
-  "repositoryUrl": "https://github.com/YOUR_GITHUB_USERNAME/grayjay-pornhub",
+  "sourceUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin/PornhubConfig.json",
+  "repositoryUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin",
   "scriptUrl": "./PornhubScript.js",
   "version": 1,
 
   "iconUrl": "./pornhub-icon.png",
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "id": "cc99ac03-0037-45e5-89f4-566d1e5bf495",
 
   "scriptSignature": "",
   "scriptPublicKey": "",
