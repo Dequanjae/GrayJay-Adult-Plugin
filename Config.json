@@ -1,6 +1,6 @@
 {
   "name": "Pornhub",
-  "description": "Browse trending, search, and watch videos from Pornhub with optional login for personalized content.",
+  "description": "Browse trending, search, and watch videos from Pornhub",
   "author": "Dequanjae",
   "authorUrl": "https://github.com/Dequanjae",
 
@@ -18,19 +18,4 @@
   "packages": ["Http", "DOMParser"],
 
   "allowEval": false,
-  "allowUrls": [
-    "pornhub.com",
-    "www.pornhub.com",
-    "rt.pornhub.com",
-    "di.phncdn.com",
-    "cdn77.phncdn.com"
-  ],
-
-  "login": {
-    "loginButton": "Login with Pornhub",
-    "loginUsernamePlaceholder": "Username or Email",
-    "loginPasswordPlaceholder": "Password",
-    "loginButtonText": "Login",
-    "loginPageTitle": "Login to Pornhub"
-  }
-}
+  "allowUrls": ["*"],
