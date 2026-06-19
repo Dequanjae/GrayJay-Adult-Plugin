@@ -3,22 +3,15 @@
   "description": "Browse trending, search, and watch videos from Pornhub",
   "author": "Dequanjae",
   "authorUrl": "https://github.com/Dequanjae",
-
   "sourceUrl": "https://dequanjae.github.io/GrayJay-Adult-Plugin/Config.json",
   "repositoryUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin",
-  "scriptUrl": "./script.js",
-  "version": 3,
-
+  "scriptUrl": "./script.js?v=6",
+  "version": 6,
   "iconUrl": "./pornhub-icon.png",
   "id": "cc99ac03-0037-45e5-89f4-566d1e5bf495",
-
   "scriptSignature": "",
   "scriptPublicKey": "",
-
   "packages": ["Http", "DOMParser"],
-
   "allowEval": false,
-  "allowUrls": [
-    "everywhere"
-  ]
+  "allowUrls": ["everywhere"]
 }
