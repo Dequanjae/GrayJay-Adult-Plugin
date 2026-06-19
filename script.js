@@ -25,7 +25,6 @@ source.getHome = function (continuationToken) {
 
       const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "Untitled Video";
       const videoUrl = linkMatch[1].trim();
-      const viewKey = videoUrl.split("viewkey=")[1] || videoUrl;
 
       // Extract hidden thumbnail from CDATA description block
       let thumb = "";
@@ -66,18 +65,19 @@ source.isContentDetailsUrl = function (url) {
 };
 
 source.getContentDetails = function (url) {
+  // 1. Fetch web page data for accurate metadata extraction
   const resp = http.GET(url, HEADERS, true);
   const html = resp.body;
   const dom = domParser.parseFromString(html, "text/html");
 
-  // 1. Accurate Metadata Processing (Derfirm/Sskender pattern mapping)
+  // Scrape high-accuracy title, thumbnail, and view counts
   const title = dom.querySelector("meta[property='og:title']")?.getAttribute("content") || dom.querySelector("h1")?.textContent?.trim() || "Untitled Video";
   const thumb = dom.querySelector("meta[property='og:image']")?.getAttribute("content") || "";
   
   const viewText = dom.querySelector(".views .count")?.textContent || "0";
   const viewCount = parseInt(viewText.replace(/[^0-9]/g, "")) || 0;
 
-  // 2. Creator Extraction Block
+  // Scrape accurate Creator/Uploader information
   const authorEl = dom.querySelector(".usernameBadgesWrapper a") || dom.querySelector(".usernameWrap a") || dom.querySelector("a[href*='/users/']");
   const authorName = authorEl ? authorEl.textContent.trim() : "Verified Creator";
   let authorUrl = authorEl ? authorEl.getAttribute("href") : "";
@@ -87,38 +87,37 @@ source.getContentDetails = function (url) {
     authorUrl = "https://www.pornhub.com";
   }
 
-  // 3. Resilient Stream Extraction from flashvars layout definitions
+  // 2. Query your Self-Hosted Cobalt API for the underlying video stream
   const videoSources = [];
-  const flashvarsMatch = html.match(/var\s+flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
-  
-  if (flashvarsMatch) {
-    const mediaDefsMatch = flashvarsMatch[1].match(/"mediaDefinitions"\s*:\s*(\[[\s\S]*?\])/);
-    if (mediaDefsMatch) {
-      // Isolate individual video URL variables directly without breaking on JSON formatting anomalies
-      const urlRegex = /"videoUrl"\s*:\s*"([^"]+)"/g;
-      let match;
-      while ((match = urlRegex.exec(mediaDefsMatch[1])) !== null) {
-        const cleanUrl = match[1].replace(/\\/g, ""); // Remove escaping backslashes
-        if (cleanUrl) {
-          let quality = 720;
-          if (cleanUrl.includes("1080p")) quality = 1080;
-          else if (cleanUrl.includes("720p")) quality = 720;
-          else if (cleanUrl.includes("480p")) quality = 480;
-          else if (cleanUrl.includes("240p")) quality = 240;
+  try {
+    const NAS_API = "http://192.168.50.235:9001/";
+    const cobaltResp = http.POST(NAS_API, JSON.stringify({
+      url: url,
+      videoCodec: "h264"
+    }), {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    });
 
-          videoSources.push(new VideoUrlSource({
-            url: cleanUrl,
-            width: quality === 1080 ? 1920 : 1280,
-            height: quality,
-            container: "video/mp4",
-            codec: "h264",
-            name: quality + "p",
-            duration: 0,
-            bitrate: 4000000
-          }));
-        }
+    if (cobaltResp && cobaltResp.code === 200) {
+      const json = JSON.parse(cobaltResp.body);
+      const streamUrl = json.url;
+
+      if (streamUrl) {
+        videoSources.push(new VideoUrlSource({
+          url: streamUrl,
+          width: 1280,
+          height: 720,
+          container: "video/mp4",
+          codec: "h264",
+          name: "NAS Stream (720p)",
+          duration: 0,
+          bitrate: 4000000
+        }));
       }
     }
+  } catch (e) {
+    // Fail silently or pass empty stream setup if NAS is unreachable
   }
 
   return new PlatformVideoDetails({
@@ -130,7 +129,7 @@ source.getContentDetails = function (url) {
     duration: 0,
     viewCount: viewCount,
     uploadDate: Math.floor(Date.now() / 1000),
-    description: "",
+    description: "Streamed via private local NAS API pipeline.",
     video: new VideoSourceDescriptor(videoSources),
     isLive: false
   });
