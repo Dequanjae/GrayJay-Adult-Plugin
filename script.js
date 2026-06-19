@@ -2,12 +2,13 @@ const RSS_FEED_URL = "https://www.pornhub.com/rss";
 const PLUGIN_ID = "cc99ac03-0037-45e5-89f4-566d1e5bf495";
 
 const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 };
 
 source.enable = function (conf, settings, savedState) {};
 source.isLoggedIn = function () { return false; };
 
+// Home Feed
 source.getHome = function (continuationToken) {
   const resp = http.GET(RSS_FEED_URL, HEADERS, false);
   if (!resp || resp.code !== 200) return new PHVideoPager([], false, null);
@@ -17,20 +18,17 @@ source.getHome = function (continuationToken) {
 
   items.forEach(function (itemXml) {
     try {
-      const titleMatch = itemXml.match(/<title>([\s\S]*?)<\/title>/i);
+      const title = (itemXml.match(/<title>([\s\S]*?)<\/title>/i) || ["","Untitled"])[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
       const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
-      // Look for media:thumbnail or standard enclosure images
-      const thumbMatch = itemXml.match(/url=["'](https?:\/\/[^"']+\.(?:jpg|png|webp))/i);
-      
       if (!linkMatch) return;
-
-      const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "Untitled";
+      
       const videoUrl = linkMatch[1].trim();
+      // Try to find a thumbnail inside the XML item
+      const thumbMatch = itemXml.match(/url=["'](https?:\/\/[^"']+\.(?:jpg|png|webp))/i);
       const thumb = thumbMatch ? thumbMatch[1] : "";
-      const viewKey = videoUrl.split("viewkey=")[1] || videoUrl;
 
       videos.push(new PlatformVideo({
-        id: new PlatformID("pornhub", viewKey, PLUGIN_ID),
+        id: new PlatformID("pornhub", videoUrl, PLUGIN_ID),
         name: title,
         thumbnails: new Thumbnails([new Thumbnail(thumb, 360)]),
         author: new PlatformAuthorLink(new PlatformID("pornhub", "rss", PLUGIN_ID), "Pornhub Feed", RSS_FEED_URL, ""),
@@ -42,73 +40,45 @@ source.getHome = function (continuationToken) {
       }));
     } catch (e) {}
   });
-
   return new PHVideoPager(videos, false, null);
 };
 
-source.isChannelUrl = function (url) {
-  return url.includes("pornhub.com/user/") || url.includes("pornhub.com/channel/");
-};
-
-source.getChannel = function (url) {
-  return new PlatformChannel({
-    id: new PlatformID("pornhub", url, PLUGIN_ID),
-    name: "Pornhub Creator",
-    thumbnail: "",
-    banner: "",
-    description: "User profile.",
-    subscribers: 0,
-    links: []
-  });
-};
-
-source.isContentDetailsUrl = function (url) {
-  return url.includes("view_video.php");
-};
-
+// Video Page Details
 source.getContentDetails = function (url) {
   const resp = http.GET(url, HEADERS, true);
   const html = resp.body;
   const dom = domParser.parseFromString(html, "text/html");
-  
-  // 1. Get Title
-  const title = dom.querySelector("h1")?.textContent?.trim() || "Untitled Video";
-  
-  // 2. Get Author (Fixes the "Creator" issue)
+
+  // 1. Get Real Author Name
   const authorEl = dom.querySelector(".usernameBadgesWrapper a") || dom.querySelector(".usernameWrap a");
-  const authorName = authorEl ? authorEl.textContent.trim() : "Unknown";
+  const authorName = authorEl ? authorEl.textContent.trim() : "Unknown Creator";
   const authorUrl = authorEl ? "https://www.pornhub.com" + authorEl.getAttribute("href") : "https://www.pornhub.com";
 
-  // 3. Get Thumbnail
-  const thumb = dom.querySelector("meta[property='og:image']")?.getAttribute("content") || "";
-
-  // 4. Get Video Sources (Parses the flashvars in the HTML)
-  const flashvarsMatch = html.match(/var\s+flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
+  // 2. Get Video Stream (Using flexible flashvars logic)
   let videoSources = [];
+  const flashvarsMatch = html.match(/var\s+flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
+  
   if (flashvarsMatch) {
-    const flashvars = JSON.parse(flashvarsMatch[1]);
-    if (flashvars.mediaDefinitions) {
-      flashvars.mediaDefinitions.forEach(function(def) {
-        if(def.videoUrl) {
+    try {
+      const flashvars = JSON.parse(flashvarsMatch[1]);
+      if (flashvars.mediaDefinitions) {
+        flashvars.mediaDefinitions.forEach(function(def) {
           videoSources.push(new VideoUrlSource({
             url: def.videoUrl,
-            width: 1280, 
-            height: parseInt(def.quality) || 720, 
+            width: 1280, height: parseInt(def.quality) || 720,
             container: "video/mp4",
-            codec: "h264", 
-            name: def.quality + "p", 
-            duration: 0, 
-            bitrate: 4000000
+            codec: "h264", name: def.quality + "p",
+            duration: 0, bitrate: 4000000
           }));
-        }
-      });
-    }
+        });
+      }
+    } catch (e) { /* Fallback if JSON fails */ }
   }
 
   return new PlatformVideoDetails({
     id: new PlatformID("pornhub", url, PLUGIN_ID),
-    name: title,
-    thumbnails: new Thumbnails([new Thumbnail(thumb, 720)]),
+    name: dom.querySelector("h1")?.textContent?.trim() || "Untitled Video",
+    thumbnails: new Thumbnails([new Thumbnail(dom.querySelector("meta[property='og:image']")?.getAttribute("content") || "", 720)]),
     author: new PlatformAuthorLink(new PlatformID("pornhub", authorUrl, PLUGIN_ID), authorName, authorUrl, ""),
     url: url,
     duration: 0,
@@ -120,6 +90,9 @@ source.getContentDetails = function (url) {
   });
 };
 
+source.isChannelUrl = function (url) { return url.includes("pornhub.com/user/") || url.includes("pornhub.com/channel/"); };
+source.getChannel = function (url) { return new PlatformChannel({ id: new PlatformID("pornhub", url, PLUGIN_ID), name: "Pornhub User", thumbnail: "", banner: "", description: "Profile", subscribers: 0, links: [] }); };
+source.isContentDetailsUrl = function (url) { return url.includes("view_video.php"); };
 source.getSearchCapabilities = function () { return { types: [Type.Feed.Mixed], sorts: [], filters: [] }; };
 source.search = function (query, type, order, filters, continuationToken) { return new PHVideoPager([], false, null); };
 
