@@ -17,5 +17,5 @@
 
   "packages": ["Http", "DOMParser"],
 
-  "allowEval": false,
-  "allowUrls": ["*"],
+  "allowEval": false
+}
