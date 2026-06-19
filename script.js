@@ -1,4 +1,5 @@
 const RSS_FEED_URL = "https://www.pornhub.com/rss";
+const PLUGIN_ID = "cc99ac03-0037-45e5-89f4-566d1e5bf495";
 
 const HEADERS_BASE = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
@@ -7,7 +8,7 @@ const HEADERS_BASE = {
 };
 
 // -----------------------------------------------
-// ENABLE / AUTH (Stripped to Basics)
+// ENABLE / AUTH
 // -----------------------------------------------
 
 source.enable = function (conf, settings, savedState) {
@@ -38,14 +39,23 @@ source.getHome = function (continuationToken) {
 
   items.forEach(function (item) {
     try {
+      // 1. Extract Title
+      let title = "Untitled Video";
       const titleEl = item.querySelector("title");
+      if (titleEl) title = titleEl.textContent.trim();
+
+      // 2. Extract Link (Check both <link> and <guid>)
+      let videoUrl = "";
       const linkEl = item.querySelector("link");
-      if (!titleEl || !linkEl) return;
+      if (linkEl) videoUrl = linkEl.textContent.trim();
+      if (!videoUrl) {
+        const guidEl = item.querySelector("guid");
+        if (guidEl) videoUrl = guidEl.textContent.trim();
+      }
+      
+      if (!videoUrl) return; // Skip if there's absolutely no URL
 
-      const title = titleEl.textContent.trim();
-      const videoUrl = linkEl.textContent.trim();
-
-      // Attempt to find a thumbnail URL in media tags or enclosure
+      // 3. Extract Thumbnail (Regex fallback for Pornhub's messy description blocks)
       let thumb = "";
       const mediaThumb = item.querySelector("thumbnail, content");
       if (mediaThumb && mediaThumb.getAttribute("url")) {
@@ -56,18 +66,27 @@ source.getHome = function (continuationToken) {
           thumb = enclosure.getAttribute("url");
         }
       }
+      
+      // If tags fail, scan the raw content for image URLs
+      if (!thumb) {
+        const rawContent = item.innerHTML || item.textContent || "";
+        const thumbMatch = rawContent.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|png)/i);
+        if (thumbMatch) {
+          thumb = thumbMatch[0];
+        }
+      }
 
-      // Generate a stable ID via URL matching
+      // Generate a stable ID
       const viewkeyMatch = videoUrl.match(/viewkey=([a-zA-Z0-9]+)/);
       const viewKey = viewkeyMatch ? viewkeyMatch[1] : encodeURIComponent(videoUrl);
 
       videos.push(new PlatformVideo({
-        id: new PlatformID("pornhub", viewKey, config.id),
+        id: new PlatformID("pornhub", viewKey, PLUGIN_ID),
         name: title,
         thumbnails: new Thumbnails([new Thumbnail(thumb, 360)]),
         author: new PlatformAuthorLink(
-          new PlatformID("pornhub", "rss_feed", config.id),
-          "RSS Feed Item",
+          new PlatformID("pornhub", "rss_feed", PLUGIN_ID),
+          "Pornhub RSS",
           RSS_FEED_URL,
           ""
         ),
@@ -78,7 +97,7 @@ source.getHome = function (continuationToken) {
         isLive: false
       }));
     } catch (e) {
-      // Skip bad elements
+      // Silently skip corrupted items so the rest of the feed loads
     }
   });
 
@@ -86,7 +105,7 @@ source.getHome = function (continuationToken) {
 };
 
 // -----------------------------------------------
-// SEARCH (Disabled for Static RSS Usage)
+// SEARCH
 // -----------------------------------------------
 
 source.getSearchCapabilities = function () {
@@ -195,11 +214,11 @@ source.getContentDetails = function (url) {
   }
 
   return new PlatformVideoDetails({
-    id: new PlatformID("pornhub", viewKey, config.id),
+    id: new PlatformID("pornhub", viewKey, PLUGIN_ID),
     name: title,
     thumbnails: new Thumbnails([new Thumbnail(thumbUrl, 720)]),
     author: new PlatformAuthorLink(
-      new PlatformID("pornhub", authorUrl, config.id),
+      new PlatformID("pornhub", authorUrl, PLUGIN_ID),
       authorName,
       authorUrl,
       ""
