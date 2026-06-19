@@ -22,7 +22,6 @@ source.isLoggedIn = function () {
 // -----------------------------------------------
 
 source.getHome = function (continuationToken) {
-  // Simple check just to make sure it isn't blank
   if (!RSS_FEED_URL || RSS_FEED_URL === "") {
     throw new ScriptException("Please provide a valid RSS feed URL.");
   }
@@ -87,7 +86,7 @@ source.getHome = function (continuationToken) {
 };
 
 // -----------------------------------------------
-// SEARCH
+// SEARCH (Disabled for Static RSS Usage)
 // -----------------------------------------------
 
 source.getSearchCapabilities = function () {
