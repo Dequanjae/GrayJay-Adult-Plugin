@@ -7,7 +7,7 @@
   "sourceUrl": "https://dequanjae.github.io/GrayJay-Adult-Plugin/Config.json",
   "repositoryUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin",
   "scriptUrl": "./script.js",
-  "version": 2,
+  "version": 3,
 
   "iconUrl": "./pornhub-icon.png",
   "id": "cc99ac03-0037-45e5-89f4-566d1e5bf495",
@@ -18,5 +18,7 @@
   "packages": ["Http", "DOMParser"],
 
   "allowEval": false,
-  "allowUrls": ["*"]
+  "allowUrls": [
+    "everywhere"
+  ]
 }
