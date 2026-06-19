@@ -2,7 +2,7 @@ const RSS_FEED_URL = "https://www.pornhub.com/rss";
 const PLUGIN_ID = "cc99ac03-0037-45e5-89f4-566d1e5bf495";
 
 const HEADERS_BASE = {
-  "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9"
 };
@@ -19,7 +19,7 @@ source.isLoggedIn = function () {
 };
 
 // -----------------------------------------------
-// HOME (Fetches and Parses RSS Feed)
+// HOME (Fetches and Parses RSS Feed via Regex)
 // -----------------------------------------------
 
 source.getHome = function (continuationToken) {
@@ -29,57 +29,46 @@ source.getHome = function (continuationToken) {
 
   const resp = http.GET(RSS_FEED_URL, HEADERS_BASE, false);
 
-  if (!resp || resp.code !== 200) {
+  if (!resp || resp.code !== 200 || !resp.body) {
     return new PHVideoPager([], false, null);
   }
 
-  const dom = domParser.parseFromString(resp.body, "text/xml");
-  const items = dom.querySelectorAll("item");
+  const body = resp.body;
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   const videos = [];
+  let match;
 
-  items.forEach(function (item) {
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  // Manually iterate through every <item> in the XML text
+  while ((match = itemRegex.exec(body)) !== null) {
     try {
+      const itemXml = match[1];
+
       // 1. Extract Title
       let title = "Untitled Video";
-      const titleEl = item.querySelector("title");
-      if (titleEl) title = titleEl.textContent.trim();
+      const titleMatch = itemXml.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i) || itemXml.match(/<title>([\s\S]*?)<\/title>/i);
+      if (titleMatch) title = titleMatch[1].trim();
 
-      // 2. Extract Link (Check both <link> and <guid>)
+      // 2. Extract Link
       let videoUrl = "";
-      const linkEl = item.querySelector("link");
-      if (linkEl) videoUrl = linkEl.textContent.trim();
-      if (!videoUrl) {
-        const guidEl = item.querySelector("guid");
-        if (guidEl) videoUrl = guidEl.textContent.trim();
-      }
+      const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
+      if (linkMatch) videoUrl = linkMatch[1].trim();
       
-      if (!videoUrl) return; // Skip if there's absolutely no URL
+      if (!videoUrl) continue; // Skip if there's no URL
 
-      // 3. Extract Thumbnail (Regex fallback for Pornhub's messy description blocks)
+      // 3. Extract Thumbnail (Scan item block for image URLs)
       let thumb = "";
-      const mediaThumb = item.querySelector("thumbnail, content");
-      if (mediaThumb && mediaThumb.getAttribute("url")) {
-        thumb = mediaThumb.getAttribute("url");
-      } else {
-        const enclosure = item.querySelector("enclosure");
-        if (enclosure && enclosure.getAttribute("type")?.startsWith("image/")) {
-          thumb = enclosure.getAttribute("url");
-        }
-      }
-      
-      // If tags fail, scan the raw content for image URLs
-      if (!thumb) {
-        const rawContent = item.innerHTML || item.textContent || "";
-        const thumbMatch = rawContent.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|png)/i);
-        if (thumbMatch) {
-          thumb = thumbMatch[0];
-        }
+      const thumbMatch = itemXml.match(/(https?:\/\/[^\s"'<>]+\.(?:jpg|png|webp))/i);
+      if (thumbMatch) {
+        thumb = thumbMatch[1];
       }
 
-      // Generate a stable ID
+      // 4. Generate a stable ViewKey
       const viewkeyMatch = videoUrl.match(/viewkey=([a-zA-Z0-9]+)/);
       const viewKey = viewkeyMatch ? viewkeyMatch[1] : encodeURIComponent(videoUrl);
 
+      // Create the video object with strict Grayjay parameters
       videos.push(new PlatformVideo({
         id: new PlatformID("pornhub", viewKey, PLUGIN_ID),
         name: title,
@@ -93,13 +82,13 @@ source.getHome = function (continuationToken) {
         url: videoUrl,
         duration: 0,
         viewCount: 0,
-        datetime: 0,
+        uploadDate: currentTime, // FIXED: Grayjay rejects 'datetime'
         isLive: false
       }));
     } catch (e) {
-      // Silently skip corrupted items so the rest of the feed loads
+      // Silently catch errors so one bad item doesn't break the feed
     }
-  });
+  }
 
   return new PHVideoPager(videos, false, null);
 };
@@ -200,7 +189,7 @@ source.getContentDetails = function (url) {
   const descEl = dom.querySelector(".categoriesWrapper");
   if (descEl) description = descEl.textContent.trim();
 
-  let uploadedAt = 0;
+  let uploadedAt = Math.floor(Date.now() / 1000);
   const dateEl = dom.querySelector(".videoInfoBlock .date");
   if (dateEl) {
     const parsed = Date.parse(dateEl.textContent.trim());
@@ -226,7 +215,7 @@ source.getContentDetails = function (url) {
     url: url,
     duration: duration,
     viewCount: viewCount,
-    datetime: uploadedAt,
+    uploadDate: uploadedAt, // FIXED: Grayjay rejects 'datetime'
     description: description,
     video: new VideoSourceDescriptor(videoSources),
     isLive: false
