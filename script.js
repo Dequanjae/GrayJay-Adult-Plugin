@@ -6,6 +6,10 @@ const HEADERS = {
   "Accept-Language": "en-US,en;q=0.9"
 };
 
+// Default APIs
+const NAS_API = "http://192.168.50.235:9001/";
+const PUBLIC_API = "https://api.cobalt.tools/";
+
 source.enable = function (conf, settings, savedState) {};
 source.isLoggedIn = function () { return false; };
 
@@ -26,17 +30,13 @@ source.getHome = function (continuationToken) {
       const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "Untitled Video";
       const videoUrl = linkMatch[1].trim();
 
-      // Extract hidden thumbnail from CDATA description block
       let thumb = "";
       const descMatch = itemXml.match(/<description>([\s\S]*?)<\/description>/i);
       if (descMatch) {
         const imgMatch = descMatch[1].match(/src=["'](https?:\/\/[^"']+)["']/i);
-        if (imgMatch) {
-          thumb = imgMatch[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
-        }
+        if (imgMatch) thumb = imgMatch[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
       }
 
-      // Fallback if description parsing yielded an empty string
       if (!thumb) {
         const fallbackMatch = itemXml.match(/(https?:\/\/ei\.phncdn\.com\/videos\/[^\s"'<>]+)/i);
         if (fallbackMatch) thumb = fallbackMatch[1];
@@ -46,11 +46,11 @@ source.getHome = function (continuationToken) {
         id: new PlatformID("pornhub", videoUrl, PLUGIN_ID),
         name: title,
         thumbnails: new Thumbnails([new Thumbnail(thumb, 360)]),
-        author: new PlatformAuthorLink(new PlatformID("pornhub", "unknown", PLUGIN_ID), "Loading Creator...", "https://www.pornhub.com", ""),
+        author: new PlatformAuthorLink(new PlatformID("pornhub", "unknown", PLUGIN_ID), "Loading...", "https://www.pornhub.com", ""),
         url: videoUrl,
         duration: 0,
         viewCount: 0, 
-        uploadDate: Math.floor(Date.now() / 1000), // Enforce pure integer type
+        uploadDate: Math.floor(Date.now() / 1000),
         isLive: false
       }));
     } catch (e) {}
@@ -65,59 +65,93 @@ source.isContentDetailsUrl = function (url) {
 };
 
 source.getContentDetails = function (url) {
-  // 1. Fetch web page data for accurate metadata extraction
+  // 1. Fetch metadata HTML
   const resp = http.GET(url, HEADERS, true);
   const html = resp.body;
   const dom = domParser.parseFromString(html, "text/html");
 
-  // Scrape high-accuracy title, thumbnail, and view counts
+  // Parse Metadata
   const title = dom.querySelector("meta[property='og:title']")?.getAttribute("content") || dom.querySelector("h1")?.textContent?.trim() || "Untitled Video";
   const thumb = dom.querySelector("meta[property='og:image']")?.getAttribute("content") || "";
-  
   const viewText = dom.querySelector(".views .count")?.textContent || "0";
   const viewCount = parseInt(viewText.replace(/[^0-9]/g, "")) || 0;
 
-  // Scrape accurate Creator/Uploader information
+  // Parse Creator
   const authorEl = dom.querySelector(".usernameBadgesWrapper a") || dom.querySelector(".usernameWrap a") || dom.querySelector("a[href*='/users/']");
   const authorName = authorEl ? authorEl.textContent.trim() : "Verified Creator";
-  let authorUrl = authorEl ? authorEl.getAttribute("href") : "";
-  if (authorUrl && !authorUrl.startsWith("http")) {
-    authorUrl = "https://www.pornhub.com" + authorUrl;
-  } else if (!authorUrl) {
-    authorUrl = "https://www.pornhub.com";
-  }
+  let authorUrl = authorEl ? authorEl.getAttribute("href") : "https://www.pornhub.com";
+  if (authorUrl && !authorUrl.startsWith("http")) authorUrl = "https://www.pornhub.com" + authorUrl;
 
-  // 2. Query your Self-Hosted Cobalt API for the underlying video stream
   const videoSources = [];
+  let streamUrl = null;
+  let extractionMethod = "Failed";
+
+  // ==========================================
+  // THE TRIPLE-THREAT EXTRACTION SYSTEM
+  // ==========================================
+
+  const cobaltHeaders = {
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+  };
+  const cobaltPayload = JSON.stringify({ url: url });
+
+  // METHOD 1: Try Local NAS First
   try {
-    const NAS_API = "http://192.168.50.235:9001/";
-    const cobaltResp = http.POST(NAS_API, JSON.stringify({
-      url: url,
-      videoCodec: "h264"
-    }), {
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    });
-
-    if (cobaltResp && cobaltResp.code === 200) {
-      const json = JSON.parse(cobaltResp.body);
-      const streamUrl = json.url;
-
-      if (streamUrl) {
-        videoSources.push(new VideoUrlSource({
-          url: streamUrl,
-          width: 1280,
-          height: 720,
-          container: "video/mp4",
-          codec: "h264",
-          name: "NAS Stream (720p)",
-          duration: 0,
-          bitrate: 4000000
-        }));
+    const localResp = http.POST(NAS_API, cobaltPayload, cobaltHeaders, false);
+    if (localResp && localResp.code === 200) {
+      const json = JSON.parse(localResp.body);
+      if (json && json.url) {
+        streamUrl = json.url;
+        extractionMethod = "Streamed via Private NAS";
       }
     }
-  } catch (e) {
-    // Fail silently or pass empty stream setup if NAS is unreachable
+  } catch (e) { /* NAS failed or phone blocked HTTP */ }
+
+  // METHOD 2: Try Public Cobalt if NAS Failed
+  if (!streamUrl) {
+    try {
+      const publicResp = http.POST(PUBLIC_API, cobaltPayload, cobaltHeaders, false);
+      if (publicResp && publicResp.code === 200) {
+        const json = JSON.parse(publicResp.body);
+        if (json && json.url) {
+          streamUrl = json.url;
+          extractionMethod = "Streamed via Public API";
+        }
+      }
+    } catch (e) { /* Public API failed */ }
+  }
+
+  // METHOD 3: Native Web Scraper (Absolute Last Resort)
+  if (!streamUrl) {
+    const flashvarsMatch = html.match(/var\s+flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
+    if (flashvarsMatch) {
+      const mediaDefsMatch = flashvarsMatch[1].match(/"mediaDefinitions"\s*:\s*(\[[\s\S]*?\])/);
+      if (mediaDefsMatch) {
+        const urlRegex = /"videoUrl"\s*:\s*"([^"]+)"/g;
+        let match;
+        // Grab the last (usually highest quality) URL
+        while ((match = urlRegex.exec(mediaDefsMatch[1])) !== null) {
+          const cleanUrl = match[1].replace(/\\/g, "");
+          if (cleanUrl) streamUrl = cleanUrl;
+        }
+        if (streamUrl) extractionMethod = "Streamed via Native Scraper";
+      }
+    }
+  }
+
+  // Finalize stream push
+  if (streamUrl) {
+    videoSources.push(new VideoUrlSource({
+      url: streamUrl,
+      width: 1280,
+      height: 720,
+      container: "video/mp4",
+      codec: "h264",
+      name: "720p",
+      duration: 0,
+      bitrate: 4000000
+    }));
   }
 
   return new PlatformVideoDetails({
@@ -129,7 +163,7 @@ source.getContentDetails = function (url) {
     duration: 0,
     viewCount: viewCount,
     uploadDate: Math.floor(Date.now() / 1000),
-    description: "Streamed via private local NAS API pipeline.",
+    description: extractionMethod, // This will tell us WHICH method actually worked!
     video: new VideoSourceDescriptor(videoSources),
     isLive: false
   });
@@ -143,10 +177,10 @@ source.isChannelUrl = function (url) {
 source.getChannel = function (url) {
   return new PlatformChannel({
     id: new PlatformID("pornhub", url, PLUGIN_ID),
-    name: "Pornhub Creator Profile",
+    name: "Creator Profile",
     thumbnail: "",
     banner: "",
-    description: "Browse direct uploads from this channel destination.",
+    description: "Browse direct uploads.",
     subscribers: 0,
     links: []
   });
