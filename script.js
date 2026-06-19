@@ -19,7 +19,8 @@ source.getHome = function (continuationToken) {
     try {
       const titleMatch = itemXml.match(/<title>([\s\S]*?)<\/title>/i);
       const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
-      const thumbMatch = itemXml.match(/(https?:\/\/[^\s"'<>]+\.(?:jpg|png|webp))/i);
+      // Look for media:thumbnail or standard enclosure images
+      const thumbMatch = itemXml.match(/url=["'](https?:\/\/[^"']+\.(?:jpg|png|webp))/i);
       
       if (!linkMatch) return;
 
@@ -45,7 +46,6 @@ source.getHome = function (continuationToken) {
   return new PHVideoPager(videos, false, null);
 };
 
-// --- FIXES THE "NO SOURCE ENABLED" ERROR ---
 source.isChannelUrl = function (url) {
   return url.includes("pornhub.com/user/") || url.includes("pornhub.com/channel/");
 };
@@ -68,23 +68,54 @@ source.isContentDetailsUrl = function (url) {
 
 source.getContentDetails = function (url) {
   const resp = http.GET(url, HEADERS, true);
-  const dom = domParser.parseFromString(resp.body, "text/html");
+  const html = resp.body;
+  const dom = domParser.parseFromString(html, "text/html");
   
-  // Use a safer title selector
+  // 1. Get Title
   const title = dom.querySelector("h1")?.textContent?.trim() || "Untitled Video";
-  const viewCount = parseInt(dom.querySelector(".views .count")?.textContent?.replace(/[^0-9]/g, "") || "0");
+  
+  // 2. Get Author (Fixes the "Creator" issue)
+  const authorEl = dom.querySelector(".usernameBadgesWrapper a") || dom.querySelector(".usernameWrap a");
+  const authorName = authorEl ? authorEl.textContent.trim() : "Unknown";
+  const authorUrl = authorEl ? "https://www.pornhub.com" + authorEl.getAttribute("href") : "https://www.pornhub.com";
+
+  // 3. Get Thumbnail
+  const thumb = dom.querySelector("meta[property='og:image']")?.getAttribute("content") || "";
+
+  // 4. Get Video Sources (Parses the flashvars in the HTML)
+  const flashvarsMatch = html.match(/var\s+flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
+  let videoSources = [];
+  if (flashvarsMatch) {
+    const flashvars = JSON.parse(flashvarsMatch[1]);
+    if (flashvars.mediaDefinitions) {
+      flashvars.mediaDefinitions.forEach(function(def) {
+        if(def.videoUrl) {
+          videoSources.push(new VideoUrlSource({
+            url: def.videoUrl,
+            width: 1280, 
+            height: parseInt(def.quality) || 720, 
+            container: "video/mp4",
+            codec: "h264", 
+            name: def.quality + "p", 
+            duration: 0, 
+            bitrate: 4000000
+          }));
+        }
+      });
+    }
+  }
 
   return new PlatformVideoDetails({
     id: new PlatformID("pornhub", url, PLUGIN_ID),
     name: title,
-    thumbnails: new Thumbnails([new Thumbnail("", 720)]),
-    author: new PlatformAuthorLink(new PlatformID("pornhub", "unknown", PLUGIN_ID), "Creator", "https://www.pornhub.com", ""),
+    thumbnails: new Thumbnails([new Thumbnail(thumb, 720)]),
+    author: new PlatformAuthorLink(new PlatformID("pornhub", authorUrl, PLUGIN_ID), authorName, authorUrl, ""),
     url: url,
     duration: 0,
-    viewCount: viewCount,
+    viewCount: 0,
     uploadDate: Math.floor(Date.now() / 1000),
     description: "",
-    video: new VideoSourceDescriptor([]), // Note: You may need to add your media parser here
+    video: new VideoSourceDescriptor(videoSources),
     isLive: false
   });
 };
