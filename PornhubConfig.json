@@ -1,0 +1,36 @@
+{
+  "name": "Pornhub",
+  "description": "Browse trending, search, and watch videos from Pornhub with optional login for personalized content.",
+  "author": "Custom",
+  "authorUrl": "https://github.com",
+
+  "sourceUrl": "https://YOUR_GITHUB_USERNAME.github.io/grayjay-pornhub/PornhubConfig.json",
+  "repositoryUrl": "https://github.com/YOUR_GITHUB_USERNAME/grayjay-pornhub",
+  "scriptUrl": "./PornhubScript.js",
+  "version": 1,
+
+  "iconUrl": "./pornhub-icon.png",
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+
+  "scriptSignature": "",
+  "scriptPublicKey": "",
+
+  "packages": ["Http", "DOMParser"],
+
+  "allowEval": false,
+  "allowUrls": [
+    "pornhub.com",
+    "www.pornhub.com",
+    "rt.pornhub.com",
+    "di.phncdn.com",
+    "cdn77.phncdn.com"
+  ],
+
+  "login": {
+    "loginButton": "Login with Pornhub",
+    "loginUsernamePlaceholder": "Username or Email",
+    "loginPasswordPlaceholder": "Password",
+    "loginButtonText": "Login",
+    "loginPageTitle": "Login to Pornhub"
+  }
+}
