@@ -6,7 +6,7 @@
 
   "sourceUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin/Config.json",
   "repositoryUrl": "https://github.com/Dequanjae/GrayJay-Adult-Plugin",
-  "scriptUrl": "./PornhubScript.js",
+  "scriptUrl": "./Script.js",
   "version": 1,
 
   "iconUrl": "./pornhub-icon.png",
